@@ -13,10 +13,10 @@ func bruteMinMaxValue(min, max, coord []sfc.Bitmask, order sfc.Bitmask,
 	dim int, minValue, maxValue *sfc.Bitmask) {
 	cmax := make([]sfc.Bitmask, len(coord))
 	cmin := make([]sfc.Bitmask, len(coord))
-	
+
 	for coord[dim] = min[dim]; coord[dim] <= max[dim]; coord[dim]++ {
 
-		if dim == len(min) - 1 {
+		if dim == len(min)-1 {
 			value := sfc.Encode(order, coord)
 			if value > *maxValue {
 				*maxValue = value
@@ -27,7 +27,7 @@ func bruteMinMaxValue(min, max, coord []sfc.Bitmask, order sfc.Bitmask,
 				copy(cmin, coord)
 			}
 		} else {
-			bruteMinMaxValue(min, max, coord, order, dim + 1, minValue, maxValue)
+			bruteMinMaxValue(min, max, coord, order, dim+1, minValue, maxValue)
 		}
 	}
 }
@@ -48,19 +48,19 @@ func distance2(p1, p2 []sfc.Bitmask) float64 {
 }
 
 // TestHilbertBBoxLowerValue uses the brute force method to validate the min/
-// max location within a bounding box. 
+// max location within a bounding box.
 //
 // By using brute force we can validate higher dimensions and orders although
 // it assumes that the encode/decode methods are correct.
 //
-// Because this test uses brute force only relatively small bounding areas are 
+// Because this test uses brute force only relatively small bounding areas are
 // tested.
 func TestHilbertBBoxValue(t *testing.T) {
 
 	type tcase struct {
-		order    sfc.Bitmask
-		min       []sfc.Bitmask
-		max       []sfc.Bitmask
+		order sfc.Bitmask
+		min   []sfc.Bitmask
+		max   []sfc.Bitmask
 	}
 
 	fn := func(t *testing.T, tc tcase) {
@@ -68,7 +68,7 @@ func TestHilbertBBoxValue(t *testing.T) {
 		lowerMax := make([]sfc.Bitmask, len(tc.min))
 		copy(lowerMin, tc.min)
 		copy(lowerMax, tc.max)
-		
+
 		expectedMin := ^sfc.Bitmask(0)
 		expectedMax := sfc.Bitmask(0)
 		coord := make([]sfc.Bitmask, len(tc.min), len(tc.min))
@@ -99,24 +99,24 @@ func TestHilbertBBoxValue(t *testing.T) {
 	// results were verified against the original C code.
 	tcases := map[string]tcase{
 		"test1": {
-			order:    3,
-			min:      []sfc.Bitmask{1, 2},
-			max:      []sfc.Bitmask{3, 5},
+			order: 3,
+			min:   []sfc.Bitmask{1, 2},
+			max:   []sfc.Bitmask{3, 5},
 		},
 		"test2": {
-			order:    7,
-			min:      []sfc.Bitmask{1, 25},
-			max:      []sfc.Bitmask{22, 31},
+			order: 7,
+			min:   []sfc.Bitmask{1, 25},
+			max:   []sfc.Bitmask{22, 31},
 		},
 		"test3": {
-			order:    16,
-			min:      []sfc.Bitmask{1000, 3100},
-			max:      []sfc.Bitmask{1100, 3300},
+			order: 16,
+			min:   []sfc.Bitmask{1000, 3100},
+			max:   []sfc.Bitmask{1100, 3300},
 		},
 		"test4": {
-			order:    16,
-			min:      []sfc.Bitmask{1007, 3100, 500, 12000},
-			max:      []sfc.Bitmask{1037, 3123, 512, 12042},
+			order: 16,
+			min:   []sfc.Bitmask{1007, 3100, 500, 12000},
+			max:   []sfc.Bitmask{1037, 3123, 512, 12042},
 		},
 	}
 
@@ -294,4 +294,3 @@ func TestHilbertEncode(t *testing.T) {
 
 	}
 }
-
