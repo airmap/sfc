@@ -1,5 +1,9 @@
 package sfc
 
+import (
+	"fmt"
+)
+
 // Bitmask is the datatype that contains integer values in both hilbert
 // space and coordinate space.
 type Bitmask uint64
@@ -31,15 +35,57 @@ func adjustRotation(rotation, nDims, bits Bitmask) Bitmask {
 	return rotation
 }
 
-// reverse copies and reversed the specified array.
-func reverse(b []Bitmask) []Bitmask {
-	r := make([]Bitmask, len(b), len(b))
+func rdbit(w, k Bitmask) Bitmask {
+	return (w >> k) & 1
+}
 
-	for i := range b {
-		r[len(b)-1-i] = b[i]
+// reverse copies and reversed the specified array.
+func reverse(r []Bitmask) {
+	
+	for i := 0; i < len(r) / 2; i++ {
+		e := len(r) - 1 - i
+		r[i], r[e] = r[e], r[i]
+	}
+}
+
+// getBits reads nDims bits out of a Bitmask and consilidates them into
+// a consecutive string of bits.
+//
+// Each dimension is represented with nBytes, this method will retrieve the
+// yth bit out of each dimension and return that as a new Bitmask.
+func getBits(bm []Bitmask, y Bitmask) Bitmask {
+	bits := Bitmask(0)
+
+	for d := 0; d < len(bm); d++ {
+		bits |= rdbit(bm[d], y) << Bitmask(d)
 	}
 
-	return r
+	return bits
+}
+
+// func (bm Bitmask) writeBits(d, nBytes, y, fold Bitmask) {
+// 	bit := y
+
+// }
+
+// propogateIntBits flips the bit in the yth position of c[d].
+// If fold is 0 and the yth bit is flipped to 0, set all the bits below y to 1
+// If fold is 0 and the yth bit is flipped to 1, set all the bits below y to 0
+func propogateIntBits(d Bitmask, c []Bitmask, y Bitmask, fold Bitmask) {
+	bthbit := Bitmask(1) << y;
+	c[d] ^= bthbit;
+
+	if fold == 0 {
+		// notbit is 0 if bit y in c[d] is 1, otherwise all 1s
+		notbit := ((c[d] >> y) & 1) - 1;
+		if notbit != 0 {
+			// set all bits below y to 1
+			c[d] |= bthbit-1;
+		}else{
+			// set all the bits below y 0
+			c[d] &=  -bthbit;
+		}
+	}
 }
 
 // ones returns k bits with the value 1.
@@ -114,7 +160,9 @@ func bitTranspose(nDims, nBits, inCoords Bitmask) Bitmask {
 //      nDims*nBits <= (sizeof index)// (bits_per_byte)
 //
 //
-func Decode(nDims, nBits, index Bitmask, coord []Bitmask) {
+func Decode(nBits, index Bitmask, coord []Bitmask) {
+	nDims := Bitmask(len(coord))
+
 	if len(coord) != int(nDims) {
 		panic("coord must have a length equal to nDims")
 	}
@@ -171,9 +219,20 @@ func Decode(nDims, nBits, index Bitmask, coord []Bitmask) {
 //  index:      Output index value.  nDims*nBits bits.
 // Assumptions:
 //      nDims*nBits <= (sizeof Bitmask) * (bits_per_byte)
-func Encode(nDims, nBits Bitmask, coord []Bitmask) Bitmask {
+//
+// Encoding values with a dimension > 10 is not supported. This is solely as an
+// optimization to reduce memory churn.
+func Encode(nBits Bitmask, coord []Bitmask) Bitmask {
+	nDims := Bitmask(len(coord))
+
+	// this method makes changes inline. Avoid causing issues for the caller 
+	// by making a copy.
+	coordCopy := make([]Bitmask, len(coord))
+	copy(coordCopy, coord)
+	coord = coordCopy
+
 	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
-	coord = reverse(coord)
+	reverse(coord)
 	if nDims > 1 {
 		nDimsBits := nDims * nBits
 		coords := Bitmask(0)
@@ -220,4 +279,245 @@ func Encode(nDims, nBits Bitmask, coord []Bitmask) Bitmask {
 	}
 
 	return coord[0]
+}
+
+/*****************************************************************
+ * hilbert_box_vtx
+ * 
+ * Determine the first or last vertex of a box to lie on a Hilbert curve
+ * Inputs:
+ *  nDims:      Number of coordinates.
+ *  nBytes:     Number of bytes/coordinate.
+ *  nBits:      Number of bits/coordinate.
+ *  findMin:    Is it the least vertex sought?
+ *  coord1:     Array of nDims nBytes-byte coordinates - one corner of box
+ *  coord2:     Array of nDims nBytes-byte coordinates - opposite corner
+ * Output:
+ *      c1 and c2 modified to refer to selected corner
+ *      value returned is log2 of size of largest power-of-two-aligned box that
+ *      contains the selected corner and no other corners
+ * Assumptions:
+ *      nBits <= (sizeof bitmask_t) * (bits_per_byte)
+ */
+func hilbert_box_vtx(nDims, nBytes, nBits, findMin Bitmask, c1, c2 []Bitmask) Bitmask {
+  one := Bitmask(1)
+  bits := one << (nDims-1);
+  return hilbert_box_vtx_work(nDims, nBytes, nBits, findMin,
+			      0, nBits, c1, c2,
+			      0, bits, bits);
+}
+
+func hilbert_box_vtx_work(nDims, nBytes, nBits, findMin, max, y Bitmask, c1, c2 []Bitmask, rotation, bits , index Bitmask) Bitmask {
+	one := Bitmask(1);
+	ndOnes := ones(nDims);
+	bitsFolded := Bitmask(0);
+
+	for y--; y > 0; y-- {
+		reflection := getBits(c1, y);
+		diff := reflection ^ getBits(c2, y);
+		
+		if diff != 0 {
+			smear := rotateRight(diff, rotation, nDims) >> 1;
+			digit := rotateRight(bits ^ reflection, rotation, nDims);
+	
+			for d := Bitmask(1); d < nDims; d *= 2 {
+				index ^= index >> d;
+				digit ^= (digit  >> d) & ^smear;
+				smear |= smear >> d;
+			}
+			index &= 1;
+		
+			if (index ^ y ^ findMin) & 1 == 1 {
+				digit ^= smear+1;
+			}
+
+			digit = rotateLeft(digit, rotation, nDims) & diff;
+			reflection ^= digit;
+
+			for d := Bitmask(0); d < nDims; d++ {
+				if rdbit(diff, d) != 0 {
+					way := rdbit(digit, d)
+					if way == 0 {
+						c2[d] = c1[d * 2]
+					} else {
+						c1[d] = c2[d * 2]
+					}
+					// char* target = d*nBytes + (way? c1: c2);
+					// char* const source = 2*d*nBytes + c1 - target + c2;
+					// memcpy(target, source, nBytes);
+				}
+			}
+
+			bitsFolded |= diff
+
+			if bitsFolded == ndOnes {
+				return y
+			}
+		}
+
+		bits ^= reflection
+		bits = rotateRight(bits, rotation, nDims)
+		index ^= bits
+		reflection ^= one << rotation
+		rotation = adjustRotation(rotation,nDims,bits)
+		bits = reflection
+	}
+  	
+  	return y;
+}
+
+/*****************************************************************
+ * hilbert_box_pt
+ * 
+ * Determine the first or last point of a box to lie on a Hilbert curve
+ * Inputs:
+ *  nDims:      Number of coordinates.
+ *  nBytes:     Number of bytes/coordinate.
+ *  nBits:      Number of bits/coordinate.
+ *  findMin:    Is it the least vertex sought?
+ *  coord1:     Array of nDims nBytes-byte coordinates - one corner of box
+ *  coord2:     Array of nDims nBytes-byte coordinates - opposite corner
+ * Output:
+ *      c1 and c2 modified to refer to least point
+ * Assumptions:
+ *      nBits <= (sizeof bitmask_t) * (bits_per_byte)
+ */
+func hilbert_box_pt_work(nBits, findMin,
+	max, y Bitmask, c1, c2 []Bitmask,
+	rotation, bits, index Bitmask) Bitmask {
+	nDims := Bitmask(len(c1))
+
+	one := Bitmask(1);
+	var fold1, fold2, smearSum Bitmask
+
+	for y > max {
+		y--
+		reflection := getBits(c1, y);
+		diff := reflection ^ getBits(c2, y);
+
+		if (diff != 0) {
+			smear := rotateRight(diff, rotation, nDims) >> 1;
+			digit := rotateRight(bits ^ reflection, rotation, nDims);
+
+			for d := Bitmask(1); d < nDims; d *= 2 {
+				index ^= index >> d;
+				digit ^= (digit  >> d) & ^smear;
+				smear |= smear >> d;
+			}
+
+			smearSum += smear
+			index &= 1;
+			if (index ^ (y ^ findMin) & 1) != 0 {
+				digit ^= smear+1;
+			}
+			digit = rotateLeft(digit, rotation, nDims) & diff;
+			reflection ^= digit;
+
+			for d := Bitmask(0); d < nDims; d++ {
+				if rdbit(diff, d) != 0 {
+					// way := rdbit(digit, d);
+					// char* c = way? c1: c2;
+					// bitmask_t fold = way? fold1: fold2;
+					// propogateBits(d, nBytes, c, y, rdbit(fold, d));
+
+					if rdbit(digit, d) != 0 {
+						propogateIntBits(d, c1, y, rdbit(fold1, d));
+					} else {
+						propogateIntBits(d, c2, y, rdbit(fold2, d));
+					}
+				}
+			}
+
+			diff ^= digit;
+			fold1 |= digit;
+			fold2 |= diff;
+		}
+
+		bits ^= reflection;
+		bits = rotateRight(bits, rotation, nDims);
+		index ^= bits;
+		reflection ^= one << rotation;
+		rotation = adjustRotation(rotation,nDims,bits);
+		bits = reflection;
+	}
+
+  	return smearSum;
+}
+
+// hilbert_box_pt
+// NOTE: If you visualize the 2D hilbert curve with the lower left as 0,0 then
+// c1 and c2 take the form {Y, X}.
+//
+func hilbert_box_pt(nBits Bitmask, findMin bool,
+	c1, c2 []Bitmask) Bitmask {
+
+	nDims := Bitmask(len(c1))
+	one := Bitmask(1);
+	bits := one << (nDims-1);
+	var fm Bitmask
+	// yeah, these appear to be reversed when nBits < 8. Dunno why.
+	if findMin && nBits < 8 || findMin == false && nBits >= 8 {
+		fm = 0
+	} else {
+		fm = 1
+	}
+	return hilbert_box_pt_work(nBits, fm,
+		0, nBits, c1, c2,
+		0, bits, bits);
+}
+
+// BBoxLowerValue returns the lower bound hilbert value for a given bounding 
+// box. The lower bound is placed into the original minBound/maxBound arrays.
+//
+// If minBound or maxBound are outside the bit range specified in order the
+// results are undefined.
+func BBoxLowerValue(order Bitmask, minBound, maxBound []Bitmask) (Bitmask, error) {
+
+	if len(minBound) != len(maxBound) {
+		return 0, fmt.Errorf("min and max bounds must be the same size")
+	}
+	nDim := Bitmask(len(minBound))
+
+	if order * nDim > 64 {
+		return 0, fmt.Errorf("dimension * order must be <= 64")
+	}
+
+	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
+	reverse(minBound)
+	reverse(maxBound)
+
+	hilbert_box_pt(order, true, minBound, maxBound)
+
+	// reverse back before returning
+	reverse(minBound)
+	
+	return Encode(order, minBound), nil
+}
+
+// BBoxUpperValue returns the upper bound hilbert value for a given bounding 
+// box. The upper bound is placed into the original minBound/maxBound arrays.
+//
+// If minBound or maxBound are outside the bit range specified in order the
+// results are undefined.
+func BBoxUpperValue(order Bitmask, minBound, maxBound []Bitmask) (Bitmask, error) {
+
+	if len(minBound) != len(maxBound) {
+		return 0, fmt.Errorf("min and max bounds must be the same size")
+	}
+	nDim := Bitmask(len(minBound))
+
+	if order * nDim > 64 {
+		return 0, fmt.Errorf("dimension * order must be <= 64")
+	}
+
+	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
+	reverse(minBound)
+	reverse(maxBound)
+
+	hilbert_box_pt(order, false, minBound, maxBound)
+
+	// reverse back before returning
+	reverse(maxBound)
+
+	return Encode(order, maxBound), nil
 }
