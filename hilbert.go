@@ -7,15 +7,29 @@ import (
 // Bitmask is the datatype that contains integer values in both hilbert
 // space and coordinate space.
 type Bitmask uint64
-type halfmaskT uint32
 
 // Hilbert defines the hilbert space.
 type Hilbert struct {
 	// dim is the number of dimensions, must be >= 1
-	dim uint64
+	dim uint32
 	// order is the number of bits per dimension, must be >= 1 and
 	// <= 63
-	order uint64
+	order uint32
+}
+
+// NewHilbert returns a new Hilbert curve.
+//
+// dim - number of dimensions represented
+//
+// order - number of bits per dimension
+//
+// NOTE: dim * order must be <= 64
+func NewHilbert(dim, order uint32) (*Hilbert, error) {
+	if dim*order > 64 {
+		return nil, fmt.Errorf("dim * order must be <= 64")
+	}
+
+	return &Hilbert{dim: dim, order: order}, nil
 }
 
 func adjustRotation(rotation, nDims, bits Bitmask) Bitmask {
@@ -33,6 +47,62 @@ func adjustRotation(rotation, nDims, bits Bitmask) Bitmask {
 	}
 
 	return rotation
+}
+
+// BBoxLowerValue returns the lower bound hilbert value for a given bounding
+// box. The lower bound is placed into the original minBound/maxBound arrays.
+//
+// If minBound or maxBound are outside the bit range specified in order the
+// results are undefined.
+func BBoxLowerValue(order Bitmask, minBound, maxBound Point) (Bitmask, error) {
+
+	if len(minBound) != len(maxBound) {
+		return 0, fmt.Errorf("min and max bounds must be the same size")
+	}
+	nDim := Bitmask(len(minBound))
+
+	if order*nDim > 64 {
+		return 0, fmt.Errorf("dimension * order must be <= 64")
+	}
+
+	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
+	reverse(minBound)
+	reverse(maxBound)
+
+	hilbertBoxPt(order, true, minBound, maxBound)
+
+	// reverse back before returning
+	reverse(minBound)
+
+	return Encode(order, minBound), nil
+}
+
+// BBoxUpperValue returns the upper bound hilbert value for a given bounding
+// box. The upper bound is placed into the original minBound/maxBound arrays.
+//
+// If minBound or maxBound are outside the bit range specified in order the
+// results are undefined.
+func BBoxUpperValue(order Bitmask, minBound, maxBound Point) (Bitmask, error) {
+
+	if len(minBound) != len(maxBound) {
+		return 0, fmt.Errorf("min and max bounds must be the same size")
+	}
+	nDim := Bitmask(len(minBound))
+
+	if order*nDim > 64 {
+		return 0, fmt.Errorf("dimension * order must be <= 64")
+	}
+
+	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
+	reverse(minBound)
+	reverse(maxBound)
+
+	hilbertBoxPt(order, false, minBound, maxBound)
+
+	// reverse back before returning
+	reverse(maxBound)
+
+	return Encode(order, maxBound), nil
 }
 
 func rdbit(w, k Bitmask) Bitmask {
@@ -210,6 +280,11 @@ func Decode(nBits, index Bitmask, coord []Bitmask) {
 	}
 }
 
+// Dim returns the number of dimensions in the curve
+func (hc *Hilbert) Dim() uint32 {
+	return hc.dim
+}
+
 // Encode converts coordinates of a point on a Hilbert curve to its index.
 // Inputs:
 //  nDims:      Number of coordinates.
@@ -379,58 +454,7 @@ func hilbertBoxPt(nBits Bitmask, findMin bool,
 	return hilbertBoxPtWork(nBits, fm, 0, nBits, c1, c2, 0, bits, bits)
 }
 
-// BBoxLowerValue returns the lower bound hilbert value for a given bounding
-// box. The lower bound is placed into the original minBound/maxBound arrays.
-//
-// If minBound or maxBound are outside the bit range specified in order the
-// results are undefined.
-func BBoxLowerValue(order Bitmask, minBound, maxBound []Bitmask) (Bitmask, error) {
-
-	if len(minBound) != len(maxBound) {
-		return 0, fmt.Errorf("min and max bounds must be the same size")
-	}
-	nDim := Bitmask(len(minBound))
-
-	if order*nDim > 64 {
-		return 0, fmt.Errorf("dimension * order must be <= 64")
-	}
-
-	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
-	reverse(minBound)
-	reverse(maxBound)
-
-	hilbertBoxPt(order, true, minBound, maxBound)
-
-	// reverse back before returning
-	reverse(minBound)
-
-	return Encode(order, minBound), nil
-}
-
-// BBoxUpperValue returns the upper bound hilbert value for a given bounding
-// box. The upper bound is placed into the original minBound/maxBound arrays.
-//
-// If minBound or maxBound are outside the bit range specified in order the
-// results are undefined.
-func BBoxUpperValue(order Bitmask, minBound, maxBound []Bitmask) (Bitmask, error) {
-
-	if len(minBound) != len(maxBound) {
-		return 0, fmt.Errorf("min and max bounds must be the same size")
-	}
-	nDim := Bitmask(len(minBound))
-
-	if order*nDim > 64 {
-		return 0, fmt.Errorf("dimension * order must be <= 64")
-	}
-
-	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
-	reverse(minBound)
-	reverse(maxBound)
-
-	hilbertBoxPt(order, false, minBound, maxBound)
-
-	// reverse back before returning
-	reverse(maxBound)
-
-	return Encode(order, maxBound), nil
+// Order returns the number of bits per dimension in the curve.
+func (hc *Hilbert) Order() uint32 {
+	return hc.order
 }
