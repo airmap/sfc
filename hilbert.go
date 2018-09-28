@@ -32,8 +32,10 @@ func NewHilbert(dim, order uint32) (*Hilbert, error) {
 	return &Hilbert{dim: dim, order: order}, nil
 }
 
-func adjustRotation(rotation, nDims, bits Bitmask) Bitmask {
-	nd1Ones := ones(nDims) >> 1
+//
+// nd1Ones - can be expensive, so pass it in each time.
+// nd1Ones := ones(nDims) >> 1
+func adjustRotation(rotation, nd1Ones, nDims, bits Bitmask) Bitmask {
 
 	/* rotation = (rotation + 1 + ffs(bits)) % nDims; */
 	bits &= -bits & nd1Ones
@@ -126,8 +128,9 @@ func reverse(r []Bitmask) {
 func getBits(bm []Bitmask, y Bitmask) Bitmask {
 	bits := Bitmask(0)
 
-	for d := 0; d < len(bm); d++ {
-		bits |= rdbit(bm[d], y) << Bitmask(d)
+	ld := Bitmask(len(bm))
+	for d := Bitmask(0); d < ld; d++ {
+		bits |= (bm[d] >> y & 1) << d
 	}
 
 	return bits
@@ -160,7 +163,7 @@ func propogateIntBits(d Bitmask, c []Bitmask, y Bitmask, fold Bitmask) {
 
 // ones returns k bits with the value 1.
 func ones(k Bitmask) Bitmask {
-	return (Bitmask(2) << (k - 1)) - 1
+	return (Bitmask(1) << k) - 1
 }
 
 func rotateLeft(arg, nRots, nDims Bitmask) Bitmask {
@@ -256,7 +259,7 @@ func Decode(nBits, index Bitmask, coord []Bitmask) {
 				coords <<= nDims
 				coords |= rotateLeft(bits, rotation, nDims) ^ flipBit
 				flipBit = 1 << rotation
-				rotation = adjustRotation(rotation, nDims, bits)
+				rotation = adjustRotation(rotation, ndOnes>>1, nDims, bits)
 
 				if b == 0 {
 					break
@@ -300,12 +303,6 @@ func (hc *Hilbert) Dim() uint32 {
 func Encode(nBits Bitmask, coord []Bitmask) Bitmask {
 	nDims := Bitmask(len(coord))
 
-	// this method makes changes inline. Avoid causing issues for the caller
-	// by making a copy.
-	coordCopy := make([]Bitmask, len(coord))
-	copy(coordCopy, coord)
-	coord = coordCopy
-
 	// reverse the coordinate so that coord[0] = X, coord[1] = Y, ...
 	reverse(coord)
 	if nDims > 1 {
@@ -335,7 +332,7 @@ func Encode(nBits Bitmask, coord []Bitmask) Bitmask {
 				index <<= nDims
 				index |= bits
 				flipBit = Bitmask(1) << rotation
-				rotation = adjustRotation(rotation, nDims, bits)
+				rotation = adjustRotation(rotation, ndOnes>>1, nDims, bits)
 
 				if b == 0 {
 					break
@@ -349,6 +346,8 @@ func Encode(nBits Bitmask, coord []Bitmask) Bitmask {
 		for d := Bitmask(1); d < nDimsBits; d *= 2 {
 			index = index ^ (index >> d)
 		}
+
+		reverse(coord)
 
 		return index
 	}
@@ -427,7 +426,7 @@ func hilbertBoxPtWork(nBits, findMin,
 		bits = rotateRight(bits, rotation, nDims)
 		index ^= bits
 		reflection ^= one << rotation
-		rotation = adjustRotation(rotation, nDims, bits)
+		rotation = adjustRotation(rotation, ones(nDims)>>1, nDims, bits)
 		bits = reflection
 	}
 

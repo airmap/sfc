@@ -63,6 +63,7 @@ func (hc *Hilbert) cellIterator(tier uint32, mask []Bitmask) CellIterator {
 type decomposeCall struct {
 	minTier uint32
 	maxTier uint32
+	bounds  Bounds
 	ranges  chan Range
 	region  Intersecter
 	err     chan error
@@ -84,6 +85,7 @@ func (hc *Hilbert) DecomposeRegion(minTier, maxTier uint32,
 	it := hc.cellIterator(0, cell)
 
 	dc := decomposeCall{
+		bounds:  Bounds{Min: cell.Clone(), Max: cell.Clone()},
 		err:     make(chan error),
 		minTier: minTier,
 		maxTier: maxTier,
@@ -110,17 +112,15 @@ func (hc *Hilbert) decomposeRegion(tier uint32, cell Point, dc *decomposeCall, r
 
 	tierBit := Bitmask(1) << (Bitmask(hc.order) - Bitmask(tier) - 1)
 	upperBits := tierBit - 1
-	upper := make(Point, hc.dim, hc.dim)
 
 	// calculate the upper bound
-	copy(upper, cell)
+	copy(dc.bounds.Min, cell)
+	copy(dc.bounds.Max, cell)
 	for d := uint32(0); d < hc.dim; d++ {
-		upper[d] |= upperBits
+		dc.bounds.Max[d] |= upperBits
 	}
 
-	bounds := &Bounds{Min: cell, Max: upper}
-
-	intersects, err := dc.region.Intersects(bounds)
+	intersects, err := dc.region.Intersects(&dc.bounds)
 	if err != nil {
 		return err
 	}
@@ -130,31 +130,33 @@ func (hc *Hilbert) decomposeRegion(tier uint32, cell Point, dc *decomposeCall, r
 		// if we're in the reporting range
 		if tier >= dc.minTier {
 
-			contains, err := dc.region.Contains(bounds)
+			contains, err := dc.region.Contains(&dc.bounds)
 			if err != nil {
 				return err
 			}
 
 			// if we've reached the max tier, or are fully contained
 			if tier == dc.maxTier || contains {
-				tmp1 := cell.Clone()
-				tmp2 := upper.Clone()
+				//tmp2 := upper.Clone()
 
-				lower, err := BBoxLowerValue(Bitmask(hc.order), tmp1, tmp2)
-				if err != nil {
-					return err
-				}
+				// lower, err := BBoxLowerValue(Bitmask(hc.order), tmp1, tmp2)
+				// if err != nil {
+				// 	return err
+				// }
 
-				copy(tmp1, cell)
-				copy(tmp2, upper)
-				upper, err := BBoxUpperValue(Bitmask(hc.order), tmp1, tmp2)
-				if err != nil {
-					return err
-				}
+				// copy(tmp1, cell)
+				// copy(tmp2, upper)
+				// upper, err := BBoxUpperValue(Bitmask(hc.order), tmp1, tmp2)
+				// if err != nil {
+				// 	return err
+				// }
+				value := Encode(Bitmask(hc.order), cell)
+				tierValueBits := Bitmask(1) << ((hc.order - tier - 1) * hc.dim)
+				tierValueBits--
 
 				r := Range{
-					MinValue: lower,
-					MaxValue: upper,
+					MinValue: value & ^tierValueBits,
+					MaxValue: value | tierValueBits,
 				}
 				*result = append(*result, r)
 				// if we only partially overlap and we aren't at the max

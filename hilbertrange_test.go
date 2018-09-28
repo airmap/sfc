@@ -99,31 +99,13 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 
 func BenchmarkHilbertDecomposeRegion(b *testing.B) {
 
-	uut, err := sfc.NewHilbert(2, 16)
+	uut, err := sfc.NewHilbert(2, 32)
 	if err != nil {
 		b.Fatalf("error creating hilbert curve, %v", err)
 	}
 
 	for i := 0; i < b.N; i++ {
-		_, err := uut.DecomposeRegion(0, 16, &sfc.Bounds{
-			Min: sfc.Point{32000, 35000},
-			Max: sfc.Point{45000, 38000},
-		})
-		if err != nil {
-			b.Fatalf("error decomposing region, %v", err)
-		}
-	}
-}
-
-func BenchmarkHilbertDecomposeRegionThreads(b *testing.B) {
-
-	uut, err := sfc.NewHilbert(2, 16)
-	if err != nil {
-		b.Fatalf("error creating hilbert curve, %v", err)
-	}
-
-	for i := 0; i < b.N; i++ {
-		_, err := uut.DecomposeRegionThreads(0, 16, &sfc.Bounds{
+		_, err := uut.DecomposeRegion(0, 32, &sfc.Bounds{
 			Min: sfc.Point{32000, 35000},
 			Max: sfc.Point{45000, 38000},
 		})
