@@ -24,7 +24,7 @@ func bruteAllValues(bounds sfc.Bounds, coord sfc.Point, hc *sfc.Hilbert,
 	}
 }
 
-func TestHilbertDecomposeRegion(t *testing.T) {
+func TestHilbertDecomposeRanges(t *testing.T) {
 
 	type tcase struct {
 		dim      uint32
@@ -41,7 +41,7 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 			t.Fatalf("error creating hilbert curve, %v", err)
 		}
 
-		result, err := uut.DecomposeRegion(tc.minTier, tc.maxTier, tc.bounds)
+		result, err := uut.DecomposeRanges(tc.minTier, tc.maxTier, tc.bounds)
 		if err != nil {
 			t.Fatalf("error decomposing region, %v", err)
 		}
@@ -53,7 +53,6 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 		}
 	}
 
-	// results were verified against the original C code.
 	tcases := map[string]tcase{
 		"test1": {
 			dim:     2,
@@ -97,7 +96,7 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 	}
 }
 
-func BenchmarkHilbertDecomposeRegion(b *testing.B) {
+func BenchmarkHilbertDecomposeRanges(b *testing.B) {
 
 	uut, err := sfc.NewHilbert(2, 32)
 	if err != nil {
@@ -105,7 +104,7 @@ func BenchmarkHilbertDecomposeRegion(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		_, err := uut.DecomposeRegion(0, 32, &sfc.Bounds{
+		_, err := uut.DecomposeRanges(0, 32, &sfc.Bounds{
 			Min: sfc.Point{32000, 35000},
 			Max: sfc.Point{45000, 38000},
 		})
@@ -115,11 +114,11 @@ func BenchmarkHilbertDecomposeRegion(b *testing.B) {
 	}
 }
 
-// TestHilbertDecomposeRegion2 uses brute force to extract all values in a
+// TestHilbertDecomposeRanges2 uses brute force to extract all values in a
 // range and then compares them against the ranges returned. This will only
 // flag an error if a range doesn't contain a value, not if it contains too
 // many values.
-func TestHilbertDecomposeRegion2(t *testing.T) {
+func TestHilbertDecomposeRanges2(t *testing.T) {
 
 	type tcase struct {
 		dim     uint32
@@ -135,7 +134,7 @@ func TestHilbertDecomposeRegion2(t *testing.T) {
 			t.Fatalf("error creating hilbert curve, %v", err)
 		}
 
-		result, err := uut.DecomposeRegion(tc.minTier, tc.maxTier, tc.bounds)
+		result, err := uut.DecomposeRanges(tc.minTier, tc.maxTier, tc.bounds)
 		if err != nil {
 			t.Fatalf("error decomposing region, %v", err)
 		}
@@ -159,7 +158,6 @@ func TestHilbertDecomposeRegion2(t *testing.T) {
 		}
 	}
 
-	// results were verified against the original C code.
 	tcases := map[string]tcase{
 		"test1": {
 			dim:     2,
@@ -180,6 +178,77 @@ func TestHilbertDecomposeRegion2(t *testing.T) {
 				Min: []sfc.Bitmask{2, 1, 2},
 				Max: []sfc.Bitmask{4, 5, 7},
 			},
+		},
+	}
+
+	for k, v := range tcases {
+		tc := v
+		t.Run(k, func(t *testing.T) { fn(t, tc) })
+
+	}
+}
+
+func TestHilbertDecomposeRegion(t *testing.T) {
+
+	type tcase struct {
+		dim      uint32
+		order    uint32
+		minTier  uint32
+		maxTier  uint32
+		bounds   sfc.Intersecter
+		expected []sfc.Cell
+	}
+
+	fn := func(t *testing.T, tc tcase) {
+		uut, err := sfc.NewHilbert(tc.dim, tc.order)
+		if err != nil {
+			t.Fatalf("error creating hilbert curve, %v", err)
+		}
+
+		result, err := uut.DecomposeRegion(tc.minTier, tc.maxTier, tc.bounds)
+		if err != nil {
+			t.Fatalf("error decomposing region, %v", err)
+		}
+
+		// order doesn't matter so try sorting if this test ever fails
+		if reflect.DeepEqual(result, tc.expected) == false {
+			t.Errorf("invalid result, expected %v got %v", tc.expected, result)
+		}
+	}
+
+	tcases := map[string]tcase{
+		"test1": {
+			dim:     2,
+			order:   3,
+			minTier: 0,
+			maxTier: 0,
+			bounds: &sfc.Bounds{
+				Min: []sfc.Bitmask{2, 1},
+				Max: []sfc.Bitmask{4, 5},
+			},
+			expected: []sfc.Cell{{Value: 0, Tier: 0}, {Value: 3, Tier: 0}, {Value: 1, Tier: 0}, {Value: 2, Tier: 0}},
+		},
+		"test2": {
+			dim:     2,
+			order:   3,
+			minTier: 0,
+			maxTier: 1,
+			bounds: &sfc.Bounds{
+				Min: []sfc.Bitmask{3, 4},
+				Max: []sfc.Bitmask{7, 7},
+			},
+			expected: []sfc.Cell{{Value: 7, Tier: 1}, {Value: 6, Tier: 1}, {Value: 2, Tier: 0}},
+		},
+		"test3": {
+			dim:     3,
+			order:   3,
+			minTier: 0,
+			maxTier: 2,
+			bounds: &sfc.Bounds{
+				Min: []sfc.Bitmask{1, 2, 3},
+				Max: []sfc.Bitmask{1, 2, 4},
+			},
+			expected: []sfc.Cell{{Value: 48, Tier: 2}, {Value: 123, Tier: 2}},
 		},
 	}
 
