@@ -32,13 +32,13 @@ func (b *Box) Dimensions() uint32 {
 }
 
 // Clone returns a deep copy of b.
-func (b *Box) Clone() Box {
-	result := make([]Span, len(*b))
+func (b *Box) Clone() *Box {
+	result := make(Box, len(*b))
 	for i := range *b {
 		result[i].Min = (*b)[i].Min
 		result[i].Max = (*b)[i].Max
 	}
-	return result
+	return &result
 }
 
 // Contains returns true if b completely overlaps all points in other.
