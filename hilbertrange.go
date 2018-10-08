@@ -1,17 +1,8 @@
 package sfc
 
-// Intersecter provides method for determining the relationship between a
-// region (this) and bounds.
-//
-// This must be thread safe.
-type Intersecter interface {
-	// Contains returns true if bounds is fully contained by the region.
-	Contains(bounds *Bounds) (bool, error)
-
-	// Intersects returns true if a region overlaps with bounds. This will
-	// return false if bounds is adjacent to or outside of the region.
-	Intersects(bounds *Bounds) (bool, error)
-}
+import (
+	"fmt"
+)
 
 // CellIterator is a function that iterates to the next cell in cellIterator
 type CellIterator func() bool
@@ -65,55 +56,55 @@ func (hc *Hilbert) cellIterator(tier uint32, mask []Bitmask) CellIterator {
 type decomposeCall struct {
 	minTier uint32
 	maxTier uint32
-	bounds  Bounds
+	bounds  Box
 	region  Intersecter
 }
 
-// DecomposeRanges breaks a region up into a series of hilbert value ranges.
+// DecomposeSpans breaks a region up into a series of hilbert value spans.
 //
 // minTier - The minimum tier in the hilbert curve to start the decomposition.
-// Setting this too high may result in a large number of ranges.
+// Setting this too high may result in a large number of spans.
 //
 // maxTier - The maximum tier to recurse down to during the decomposition.
 // Setting maxTier to a high value may results in a very large number of
-// ranges.
-func (hc *Hilbert) DecomposeRanges(minTier, maxTier uint32,
-	region Intersecter) (Ranges, error) {
+// spans.
+func (hc *Hilbert) DecomposeSpans(minTier, maxTier uint32,
+	region Intersecter) (Spans, error) {
 
 	cell := make(Point, hc.dim, hc.dim)
 	it := hc.cellIterator(0, cell)
 
 	dc := decomposeCall{
-		bounds:  Bounds{Min: cell.Clone(), Max: cell.Clone()},
+		bounds:  Box{{cell[0], cell[1]}},
 		minTier: minTier,
 		maxTier: maxTier,
 		region:  region,
 	}
 
-	result := Ranges{}
+	result := Spans{}
 
 	for it() {
-		err := hc.decomposeRanges(0, cell.Clone(), &dc, &result)
+		err := hc.decomposeSpans(0, cell.Clone(), &dc, &result)
 		if err != nil {
-			return Ranges{}, err
+			return Spans{}, err
 		}
 	}
 
-	result = joinRanges(result)
+	result = joinSpans(result)
 
 	return result, nil
 }
 
-func (hc *Hilbert) decomposeRanges(tier uint32, cell Point, dc *decomposeCall, result *Ranges) error {
+func (hc *Hilbert) decomposeSpans(tier uint32, cell Point, dc *decomposeCall,
+	result *Spans) error {
 
 	tierBit := Bitmask(1) << (Bitmask(hc.order) - Bitmask(tier) - 1)
 	upperBits := tierBit - 1
 
 	// calculate the upper bound
-	copy(dc.bounds.Min, cell)
-	copy(dc.bounds.Max, cell)
+	dc.bounds = NewBox(cell, cell)
 	for d := uint32(0); d < hc.dim; d++ {
-		dc.bounds.Max[d] |= upperBits
+		dc.bounds[d].Max |= upperBits
 	}
 
 	intersects, err := dc.region.Intersects(&dc.bounds)
@@ -123,7 +114,7 @@ func (hc *Hilbert) decomposeRanges(tier uint32, cell Point, dc *decomposeCall, r
 	// if the region intersects the bounds of this tier/cell
 	if intersects {
 
-		// if we're in the reporting range
+		// if we're in the reporting span
 		if tier >= dc.minTier {
 
 			contains, err := dc.region.Contains(&dc.bounds)
@@ -138,9 +129,9 @@ func (hc *Hilbert) decomposeRanges(tier uint32, cell Point, dc *decomposeCall, r
 				tierValueBits := Bitmask(1) << ((hc.order - tier - 1) * hc.dim)
 				tierValueBits--
 
-				r := Range{
-					MinValue: value & ^tierValueBits,
-					MaxValue: value | tierValueBits,
+				r := Span{
+					Min: value & ^tierValueBits,
+					Max: value | tierValueBits,
 				}
 				*result = append(*result, r)
 			} else {
@@ -150,15 +141,15 @@ func (hc *Hilbert) decomposeRanges(tier uint32, cell Point, dc *decomposeCall, r
 				it := hc.cellIterator(tier+1, cell)
 				// go through all the child cells at this tier
 				for it() {
-					hc.decomposeRanges(tier+1, cell, dc, result)
+					hc.decomposeSpans(tier+1, cell, dc, result)
 				}
 			}
-			// if we aren't in the reporting range, just recurse
+			// if we aren't in the reporting span, just recurse
 		} else {
 			it := hc.cellIterator(tier+1, cell)
 			// go through all the child cells at this tier
 			for it() {
-				hc.decomposeRanges(tier+1, cell, dc, result)
+				hc.decomposeSpans(tier+1, cell, dc, result)
 			}
 		}
 	}
@@ -169,19 +160,28 @@ func (hc *Hilbert) decomposeRanges(tier uint32, cell Point, dc *decomposeCall, r
 // DecomposeRegion breaks a region up into a series of hilbert value cells.
 //
 // minTier - The minimum tier in the hilbert curve to start the decomposition.
-// Setting this too high may result in a large number of ranges.
+// Setting this too high may result in a large number of spans.
 //
 // maxTier - The maximum tier to recurse down to during the decomposition.
 // Setting maxTier to a high value may results in a very large number of
-// ranges.
+// spans.
 func (hc *Hilbert) DecomposeRegion(minTier, maxTier uint32,
 	region Intersecter) ([]Cell, error) {
+
+	if maxTier >= hc.order {
+		return []Cell{}, fmt.Errorf("error decomposing region, maxTier (%v)"+
+			" must be less than %v", maxTier, hc.order)
+	}
+	if minTier > maxTier {
+		return []Cell{}, fmt.Errorf("error decomposing region, minTier (%v)"+
+			" must be less than or equal to maxTier (%v)", minTier, maxTier)
+	}
 
 	cell := make(Point, hc.dim, hc.dim)
 	it := hc.cellIterator(0, cell)
 
 	dc := decomposeCall{
-		bounds:  Bounds{Min: cell.Clone(), Max: cell.Clone()},
+		bounds:  NewBox(cell, cell),
 		minTier: minTier,
 		maxTier: maxTier,
 		region:  region,
@@ -196,6 +196,10 @@ func (hc *Hilbert) DecomposeRegion(minTier, maxTier uint32,
 		}
 	}
 
+	if len(result) == 0 {
+		return []Cell{}, ErrNoOverlappingCells
+	}
+
 	return result, nil
 }
 
@@ -205,10 +209,9 @@ func (hc *Hilbert) decomposeRegion(tier uint32, cell Point, dc *decomposeCall, r
 	upperBits := tierBit - 1
 
 	// calculate the upper bound
-	copy(dc.bounds.Min, cell)
-	copy(dc.bounds.Max, cell)
+	dc.bounds = NewBox(cell, cell)
 	for d := uint32(0); d < hc.dim; d++ {
-		dc.bounds.Max[d] |= upperBits
+		dc.bounds[d].Max |= upperBits
 	}
 
 	intersects, err := dc.region.Intersects(&dc.bounds)
@@ -217,8 +220,7 @@ func (hc *Hilbert) decomposeRegion(tier uint32, cell Point, dc *decomposeCall, r
 	}
 	// if the region intersects the bounds of this tier/cell
 	if intersects {
-
-		// if we're in the reporting range
+		// if we're in the reporting span
 		if tier >= dc.minTier {
 
 			contains, err := dc.region.Contains(&dc.bounds)
@@ -245,7 +247,7 @@ func (hc *Hilbert) decomposeRegion(tier uint32, cell Point, dc *decomposeCall, r
 					hc.decomposeRegion(tier+1, cell, dc, result)
 				}
 			}
-			// if we aren't in the reporting range, just recurse
+			// if we aren't in the reporting span, just recurse
 		} else {
 			it := hc.cellIterator(tier+1, cell)
 			// go through all the child cells at this tier

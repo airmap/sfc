@@ -8,14 +8,14 @@ import (
 	"github.com/airmap/sfc"
 )
 
-// bruteMinMaxValue calculates the min and max value within a given hilbert
+// bruteAllValues calculates the min and max value within a given hilbert
 // bounding box by brute force.
-func bruteAllValues(bounds sfc.Bounds, coord sfc.Point, hc *sfc.Hilbert,
+func bruteAllValues(bounds sfc.Box, coord sfc.Point, hc *sfc.Hilbert,
 	dim uint32, values *[]sfc.Bitmask) {
 
-	for coord[dim] = bounds.Min[dim]; coord[dim] <= bounds.Max[dim]; coord[dim]++ {
+	for coord[dim] = bounds[dim].Min; coord[dim] <= bounds[dim].Max; coord[dim]++ {
 
-		if int(dim) == len(bounds.Min)-1 {
+		if int(dim) == len(bounds)-1 {
 			value := sfc.Encode(sfc.Bitmask(hc.Order()), coord)
 			*values = append(*values, value)
 		} else {
@@ -24,15 +24,15 @@ func bruteAllValues(bounds sfc.Bounds, coord sfc.Point, hc *sfc.Hilbert,
 	}
 }
 
-func TestHilbertDecomposeRanges(t *testing.T) {
+func TestHilbertDecomposeSpans(t *testing.T) {
 
 	type tcase struct {
 		dim      uint32
 		order    uint32
 		minTier  uint32
 		maxTier  uint32
-		bounds   sfc.Intersecter
-		expected sfc.Ranges
+		bounds   sfc.Box
+		expected sfc.Spans
 	}
 
 	fn := func(t *testing.T, tc tcase) {
@@ -41,7 +41,7 @@ func TestHilbertDecomposeRanges(t *testing.T) {
 			t.Fatalf("error creating hilbert curve, %v", err)
 		}
 
-		result, err := uut.DecomposeRanges(tc.minTier, tc.maxTier, tc.bounds)
+		result, err := uut.DecomposeSpans(tc.minTier, tc.maxTier, &tc.bounds)
 		if err != nil {
 			t.Fatalf("error decomposing region, %v", err)
 		}
@@ -59,33 +59,33 @@ func TestHilbertDecomposeRanges(t *testing.T) {
 			order:   3,
 			minTier: 0,
 			maxTier: 0,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1},
-				Max: []sfc.Bitmask{4, 5},
-			},
-			expected: sfc.Ranges{{MinValue: 0, MaxValue: 63}},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1},
+				[]sfc.Bitmask{4, 5},
+			),
+			expected: sfc.Spans{{Min: 0, Max: 63}},
 		},
 		"test2": {
 			dim:     2,
 			order:   3,
 			minTier: 0,
 			maxTier: 1,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1},
-				Max: []sfc.Bitmask{4, 5},
-			},
-			expected: sfc.Ranges{{MinValue: 4, MaxValue: 11}, {MinValue: 28, MaxValue: 35}, {MinValue: 52, MaxValue: 59}},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1},
+				[]sfc.Bitmask{4, 5},
+			),
+			expected: sfc.Spans{{Min: 4, Max: 11}, {Min: 28, Max: 35}, {Min: 52, Max: 59}},
 		},
 		"test3": {
 			dim:     2,
 			order:   3,
 			minTier: 0,
 			maxTier: 2,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1},
-				Max: []sfc.Bitmask{4, 5},
-			},
-			expected: sfc.Ranges{{MinValue: 6, MaxValue: 11}, {MinValue: 28, MaxValue: 32}, {MinValue: 35, MaxValue: 35}, {MinValue: 53, MaxValue: 54}, {MinValue: 57, MaxValue: 57}},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1},
+				[]sfc.Bitmask{4, 5},
+			),
+			expected: sfc.Spans{{Min: 6, Max: 11}, {Min: 28, Max: 32}, {Min: 35, Max: 35}, {Min: 53, Max: 54}, {Min: 57, Max: 57}},
 		},
 	}
 
@@ -96,7 +96,7 @@ func TestHilbertDecomposeRanges(t *testing.T) {
 	}
 }
 
-func BenchmarkHilbertDecomposeRanges(b *testing.B) {
+func BenchmarkHilbertDecomposeSpans(b *testing.B) {
 
 	uut, err := sfc.NewHilbert(2, 32)
 	if err != nil {
@@ -104,28 +104,29 @@ func BenchmarkHilbertDecomposeRanges(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		_, err := uut.DecomposeRanges(0, 32, &sfc.Bounds{
-			Min: sfc.Point{32000, 35000},
-			Max: sfc.Point{45000, 38000},
-		})
+		box := sfc.NewBox(
+			sfc.Point{32000, 35000},
+			sfc.Point{45000, 38000},
+		)
+		_, err := uut.DecomposeSpans(0, 32, &box)
 		if err != nil {
 			b.Fatalf("error decomposing region, %v", err)
 		}
 	}
 }
 
-// TestHilbertDecomposeRanges2 uses brute force to extract all values in a
+// TestHilbertDecomposeSpans2 uses brute force to extract all values in a
 // range and then compares them against the ranges returned. This will only
 // flag an error if a range doesn't contain a value, not if it contains too
 // many values.
-func TestHilbertDecomposeRanges2(t *testing.T) {
+func TestHilbertDecomposeSpans2(t *testing.T) {
 
 	type tcase struct {
 		dim     uint32
 		order   uint32
 		minTier uint32
 		maxTier uint32
-		bounds  *sfc.Bounds
+		bounds  sfc.Box
 	}
 
 	fn := func(t *testing.T, tc tcase) {
@@ -134,20 +135,20 @@ func TestHilbertDecomposeRanges2(t *testing.T) {
 			t.Fatalf("error creating hilbert curve, %v", err)
 		}
 
-		result, err := uut.DecomposeRanges(tc.minTier, tc.maxTier, tc.bounds)
+		result, err := uut.DecomposeSpans(tc.minTier, tc.maxTier, &tc.bounds)
 		if err != nil {
 			t.Fatalf("error decomposing region, %v", err)
 		}
 
 		coord := make(sfc.Point, tc.dim)
 		allValues := make([]sfc.Bitmask, 0)
-		bruteAllValues(*tc.bounds, coord, uut, 0, &allValues)
+		bruteAllValues(tc.bounds, coord, uut, 0, &allValues)
 
 		for i := range allValues {
 			foundIt := false
 			for j := range result {
-				if result[j].MinValue <= allValues[i] &&
-					result[j].MaxValue >= allValues[i] {
+				if result[j].Min <= allValues[i] &&
+					result[j].Max >= allValues[i] {
 					foundIt = true
 				}
 			}
@@ -164,20 +165,20 @@ func TestHilbertDecomposeRanges2(t *testing.T) {
 			order:   3,
 			minTier: 0,
 			maxTier: 0,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1},
-				Max: []sfc.Bitmask{4, 5},
-			},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1},
+				[]sfc.Bitmask{4, 5},
+			),
 		},
 		"test2": {
 			dim:     3,
 			order:   3,
 			minTier: 0,
 			maxTier: 2,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1, 2},
-				Max: []sfc.Bitmask{4, 5, 7},
-			},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1, 2},
+				[]sfc.Bitmask{4, 5, 7},
+			),
 		},
 	}
 
@@ -195,7 +196,7 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 		order    uint32
 		minTier  uint32
 		maxTier  uint32
-		bounds   sfc.Intersecter
+		bounds   sfc.Box
 		expected []sfc.Cell
 	}
 
@@ -205,7 +206,7 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 			t.Fatalf("error creating hilbert curve, %v", err)
 		}
 
-		result, err := uut.DecomposeRegion(tc.minTier, tc.maxTier, tc.bounds)
+		result, err := uut.DecomposeRegion(tc.minTier, tc.maxTier, &tc.bounds)
 		if err != nil {
 			t.Fatalf("error decomposing region, %v", err)
 		}
@@ -222,10 +223,10 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 			order:   3,
 			minTier: 0,
 			maxTier: 0,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{2, 1},
-				Max: []sfc.Bitmask{4, 5},
-			},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{2, 1},
+				[]sfc.Bitmask{4, 5},
+			),
 			expected: []sfc.Cell{{Value: 0, Tier: 0}, {Value: 3, Tier: 0}, {Value: 1, Tier: 0}, {Value: 2, Tier: 0}},
 		},
 		"test2": {
@@ -233,10 +234,10 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 			order:   3,
 			minTier: 0,
 			maxTier: 1,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{3, 4},
-				Max: []sfc.Bitmask{7, 7},
-			},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{3, 4},
+				[]sfc.Bitmask{7, 7},
+			),
 			expected: []sfc.Cell{{Value: 7, Tier: 1}, {Value: 6, Tier: 1}, {Value: 2, Tier: 0}},
 		},
 		"test3": {
@@ -244,11 +245,22 @@ func TestHilbertDecomposeRegion(t *testing.T) {
 			order:   3,
 			minTier: 0,
 			maxTier: 2,
-			bounds: &sfc.Bounds{
-				Min: []sfc.Bitmask{1, 2, 3},
-				Max: []sfc.Bitmask{1, 2, 4},
-			},
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{1, 2, 3},
+				[]sfc.Bitmask{1, 2, 4},
+			),
 			expected: []sfc.Cell{{Value: 48, Tier: 2}, {Value: 123, Tier: 2}},
+		},
+		"test4": {
+			dim:     2,
+			order:   32,
+			minTier: 0,
+			maxTier: 31,
+			bounds: sfc.NewBox(
+				[]sfc.Bitmask{10000, 200000},
+				[]sfc.Bitmask{10000, 200000},
+			),
+			expected: []sfc.Cell{{Value: 21714213632, Tier: 31}},
 		},
 	}
 

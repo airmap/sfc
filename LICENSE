@@ -19,8 +19,8 @@ and the reason for such modification.
 
 -----
 
-September 2018 - Jason R. Surratt - port from C to Go at the request of 
-AirMap.com. This requires a number of changes to make the code go-ish. Where 
-reasonable variable names, algorithms and comments are maintained.
+September/October 2018 - Jason R. Surratt - a partial port from C to Go at the
+request of AirMap.com. This requires a number of changes to make the code 
+go-ish. Where reasonable variable names, algorithms and comments are 
+maintained.
 Copyright 2018, AirMap, Inc.
-
